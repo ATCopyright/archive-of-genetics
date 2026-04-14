@@ -1,0 +1,61 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile information",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "displayName": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "user"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "Gene": {
+      "title": "Gene",
+      "description": "Genetic information entry",
+      "type": "object",
+      "properties": {
+        "symbol": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "location": { "type": "string" },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "history": { "type": "string" },
+        "accessibilityNotes": { "type": "string" },
+        "authorUid": { "type": "string" },
+        "lastUpdated": { "type": "string", "format": "date-time" }
+      },
+      "required": ["symbol", "name", "description", "authorUid"]
+    },
+    "NewsItem": {
+      "title": "News Item",
+      "description": "News update for the archive",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "summary": { "type": "string" },
+        "content": { "type": "string" },
+        "date": { "type": "string", "format": "date-time" },
+        "authorUid": { "type": "string" }
+      },
+      "required": ["title", "summary", "authorUid"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles"
+    },
+    "/genes/{geneId}": {
+      "schema": "Gene",
+      "description": "Gene database entries"
+    },
+    "/news/{newsId}": {
+      "schema": "NewsItem",
+      "description": "News updates"
+    }
+  }
+}
