@@ -6,42 +6,17 @@ service cloud.firestore {
     // ===============================================================
     //
     // Collection: users
-    // Document ID: {userId}
-    // Fields:
-    //   - uid: string (required) - User's unique ID
-    //   - email: string (required) - User's email address
-    //   - displayName: string (optional) - User's display name
-    //   - role: string (required, enum: ['admin', 'user']) - User's role
-    //   - createdAt: timestamp (optional) - Account creation time
+    // Fields: uid, email, role (admin/user), created_at
     //
     // Collection: genes
-    // Document ID: {geneId}
-    // Fields:
-    //   - symbol: string (required, max 20) - Gene symbol (e.g., BRCA1)
-    //   - name: string (required, max 100) - Full gene name
-    //   - description: string (required, max 2000) - Detailed description
-    //   - location: string (optional, max 50) - Chromosomal location
-    //   - tags: list (optional, max 20 items) - Categorization tags
-    //   - history: string (optional, max 5000) - Historical context
-    //   - accessibilityNotes: string (optional, max 2000) - Notes on accessibility
-    //   - authorUid: string (required) - UID of the contributor
-    //   - lastUpdated: timestamp (required) - Last modification time
+    // Fields: symbol, name, description, category, authorUid, created_at
     //
     // Collection: news
-    // Document ID: {newsId}
-    // Fields:
-    //   - title: string (required, max 200) - News title
-    //   - summary: string (required, max 500) - Brief summary
-    //   - content: string (optional, max 10000) - Full article content
-    //   - date: timestamp (required) - Publication date
-    //   - authorUid: string (required) - UID of the admin author
+    // Fields: title, summary, authorUid, date
     //
     // ===============================================================
 
-    // ===============================================================
     // Helper Functions
-    // ===============================================================
-
     function isAuthenticated() {
       return request.auth != null;
     }
@@ -51,75 +26,56 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return isAuthenticated() &&
+      return isAuthenticated() && 
         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
-         (request.auth.token.email == "elyshazara70@gmail.com" && request.auth.token.email_verified == true));
+         request.auth.token.email == "elyshazara70@gmail.com");
     }
-
-    function isValidEmail(email) {
-      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
-    }
-
-    function hasOnlyAllowedFields(fields) {
-      return request.resource.data.keys().hasOnly(fields);
-    }
-
-    // ===============================================================
-    // Domain Validators
-    // ===============================================================
 
     function isValidUser(data) {
-      return hasOnlyAllowedFields(['uid', 'email', 'displayName', 'role', 'createdAt']) &&
-             data.uid == request.auth.uid &&
-             isValidEmail(data.email) &&
-             data.role in ['admin', 'user'];
+      return data.keys().hasAll(['uid', 'email', 'role', 'created_at']) &&
+             data.uid is string &&
+             data.email is string &&
+             data.role in ['admin', 'user'] &&
+             data.created_at is timestamp;
     }
 
     function isValidGene(data) {
-      return hasOnlyAllowedFields(['symbol', 'name', 'description', 'location', 'tags', 'history', 'accessibilityNotes', 'authorUid', 'lastUpdated']) &&
-             data.symbol is string && data.symbol.size() <= 20 &&
-             data.name is string && data.name.size() <= 100 &&
-             data.description is string && data.description.size() <= 2000 &&
-             (!('location' in data) || (data.location is string && data.location.size() <= 50)) &&
-             (!('tags' in data) || (data.tags is list && data.tags.size() <= 20)) &&
-             (!('history' in data) || (data.history is string && data.history.size() <= 5000)) &&
-             (!('accessibilityNotes' in data) || (data.accessibilityNotes is string && data.accessibilityNotes.size() <= 2000)) &&
-             data.authorUid == request.auth.uid &&
-             data.lastUpdated is timestamp;
-    }
-
-    function isValidNews(data) {
-      return hasOnlyAllowedFields(['title', 'summary', 'content', 'date', 'authorUid']) &&
-             data.title is string && data.title.size() <= 200 &&
-             data.summary is string && data.summary.size() <= 500 &&
-             (!('content' in data) || (data.content is string && data.content.size() <= 10000)) &&
-             data.date is timestamp &&
+      return data.keys().hasAll(['symbol', 'name', 'description', 'category', 'authorUid', 'created_at']) &&
+             data.symbol is string && data.symbol.size() > 0 && data.symbol.size() < 20 &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.description is string && data.description.size() > 0 && data.description.size() < 5000 &&
+             data.category is string &&
              data.authorUid == request.auth.uid;
     }
 
-    // ===============================================================
-    // Rules
-    // ===============================================================
+    function isValidNews(data) {
+      return data.keys().hasAll(['title', 'summary', 'authorUid', 'date']) &&
+             data.title is string && data.title.size() > 0 && data.title.size() < 200 &&
+             data.summary is string && data.summary.size() > 0 && data.summary.size() < 2000 &&
+             data.authorUid == request.auth.uid;
+    }
 
+    // Rules
     match /users/{userId} {
-      allow read: if isOwner(userId) || isAdmin();
-      allow create: if isAuthenticated() && isValidUser(request.resource.data) && 
-                      ((isOwner(userId) && request.resource.data.role == 'user') || isAdmin());
-      allow update: if isAuthenticated() && isValidUser(request.resource.data) && 
-                      ((isOwner(userId) && request.resource.data.role == resource.data.role) || isAdmin());
+      allow read: if isAuthenticated();
+      allow create: if isOwner(userId) && isValidUser(request.resource.data) && request.resource.data.role == 'user';
+      allow update: if isAdmin() || (isOwner(userId) && request.resource.data.role == resource.data.role);
     }
 
     match /genes/{geneId} {
-      allow read: if true; // Publicly accessible database
+      allow read: if true;
       allow create: if isAuthenticated() && isValidGene(request.resource.data);
-      allow update: if isAuthenticated() && isValidGene(request.resource.data) && 
-                      (request.resource.data.authorUid == resource.data.authorUid || isAdmin());
-      allow delete: if isAdmin();
+      allow update, delete: if isAdmin() || (isAuthenticated() && resource.data.authorUid == request.auth.uid);
     }
 
     match /news/{newsId} {
-      allow read: if true; // Publicly accessible news
-      allow write: if isAdmin() && isValidNews(request.resource.data);
+      allow read: if true;
+      allow create: if isAdmin() && isValidNews(request.resource.data);
+      allow update, delete: if isAdmin();
+    }
+    
+    match /test/connection {
+      allow read: if true;
     }
   }
 }

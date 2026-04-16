@@ -1,13 +1,27 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
-import { getFirestore, doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { 
+  getAuth, 
+  signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword, 
+  signOut,
+  onAuthStateChanged
+} from 'firebase/auth';
+import { 
+  getFirestore, 
+  doc, 
+  setDoc, 
+  getDoc,
+  serverTimestamp 
+} from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
+// Initialize Firebase
+console.log("Initializing Firebase with Project ID:", firebaseConfig.projectId);
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
-export const googleProvider = new GoogleAuthProvider();
+export const db = getFirestore(app);
 
+// Error Handling
 export enum OperationType {
   CREATE = 'create',
   UPDATE = 'update',
@@ -25,14 +39,6 @@ export interface FirestoreErrorInfo {
     userId: string | undefined;
     email: string | null | undefined;
     emailVerified: boolean | undefined;
-    isAnonymous: boolean | undefined;
-    tenantId: string | null | undefined;
-    providerInfo: {
-      providerId: string;
-      displayName: string | null;
-      email: string | null;
-      photoUrl: string | null;
-    }[];
   }
 }
 
@@ -43,14 +49,6 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
       userId: auth.currentUser?.uid,
       email: auth.currentUser?.email,
       emailVerified: auth.currentUser?.emailVerified,
-      isAnonymous: auth.currentUser?.isAnonymous,
-      tenantId: auth.currentUser?.tenantId,
-      providerInfo: auth.currentUser?.providerData.map(provider => ({
-        providerId: provider.providerId,
-        displayName: provider.displayName,
-        email: provider.email,
-        photoUrl: provider.photoURL
-      })) || []
     },
     operationType,
     path
@@ -59,27 +57,31 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   throw new Error(JSON.stringify(errInfo));
 }
 
-export async function login() {
+// Auth Helpers
+export const signUp = async (email: string, pass: string) => {
+  console.log("Starting signup for:", email);
+  const userCredential = await createUserWithEmailAndPassword(auth, email, pass);
+  const user = userCredential.user;
+  console.log("Auth user created with UID:", user.uid);
+  
   try {
-    const result = await signInWithPopup(auth, googleProvider);
-    const user = result.user;
-    
-    // Check if user exists in Firestore, if not create profile
-    const userDoc = await getDoc(doc(db, 'users', user.uid));
-    if (!userDoc.exists()) {
-      await setDoc(doc(db, 'users', user.uid), {
-        uid: user.uid,
-        email: user.email,
-        displayName: user.displayName,
-        role: user.email === "elyshazara70@gmail.com" ? 'admin' : 'user',
-        createdAt: serverTimestamp()
-      });
-    }
+    // Create user profile in Firestore
+    await setDoc(doc(db, 'users', user.uid), {
+      uid: user.uid,
+      email: user.email,
+      role: 'user', // Default role
+      created_at: serverTimestamp()
+    });
+    console.log("Firestore user document created successfully for UID:", user.uid);
   } catch (error) {
-    console.error("Login error:", error);
+    console.error("Error creating Firestore user document:", error);
+    // We still return the user because auth succeeded, 
+    // but the UI will catch this if we re-throw or handle it
+    handleFirestoreError(error, OperationType.CREATE, `users/${user.uid}`);
   }
-}
+  
+  return user;
+};
 
-export async function logout() {
-  await signOut(auth);
-}
+export const login = (email: string, pass: string) => signInWithEmailAndPassword(auth, email, pass);
+export const logout = () => signOut(auth);

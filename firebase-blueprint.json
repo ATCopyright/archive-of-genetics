@@ -2,14 +2,12 @@
   "entities": {
     "User": {
       "title": "User",
-      "description": "User profile information",
+      "description": "User profile and role information",
       "type": "object",
       "properties": {
         "uid": { "type": "string" },
-        "email": { "type": "string", "format": "email" },
-        "displayName": { "type": "string" },
-        "role": { "type": "string", "enum": ["admin", "user"] },
-        "createdAt": { "type": "string", "format": "date-time" }
+        "email": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "user"] }
       },
       "required": ["uid", "email", "role"]
     },
@@ -18,42 +16,40 @@
       "description": "Genetic information entry",
       "type": "object",
       "properties": {
-        "symbol": { "type": "string" },
         "name": { "type": "string" },
+        "symbol": { "type": "string" },
         "description": { "type": "string" },
+        "category": { "type": "string" },
         "location": { "type": "string" },
         "tags": { "type": "array", "items": { "type": "string" } },
-        "history": { "type": "string" },
-        "accessibilityNotes": { "type": "string" },
-        "authorUid": { "type": "string" },
-        "lastUpdated": { "type": "string", "format": "date-time" }
+        "created_at": { "type": "string", "format": "date-time" },
+        "authorUid": { "type": "string" }
       },
-      "required": ["symbol", "name", "description", "authorUid"]
+      "required": ["name", "symbol", "description", "category", "created_at", "authorUid"]
     },
     "NewsItem": {
-      "title": "News Item",
-      "description": "News update for the archive",
+      "title": "NewsItem",
+      "description": "Archive news update",
       "type": "object",
       "properties": {
         "title": { "type": "string" },
         "summary": { "type": "string" },
-        "content": { "type": "string" },
         "date": { "type": "string", "format": "date-time" },
         "authorUid": { "type": "string" }
       },
-      "required": ["title", "summary", "authorUid"]
+      "required": ["title", "summary", "date", "authorUid"]
     }
   },
   "firestore": {
-    "/users/{userId}": {
+    "users/{userId}": {
       "schema": "User",
-      "description": "User profiles"
+      "description": "User profile documents"
     },
-    "/genes/{geneId}": {
+    "genes/{geneId}": {
       "schema": "Gene",
-      "description": "Gene database entries"
+      "description": "Genetic database entries"
     },
-    "/news/{newsId}": {
+    "news/{newsId}": {
       "schema": "NewsItem",
       "description": "News updates"
     }

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { Gene } from "@/src/lib/data";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -7,9 +8,23 @@ import { Button } from "@/components/ui/button";
 import { Search, Info, History, BookOpen, Heart, Globe, Code, Github, Plus } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { db, auth, handleFirestoreError, OperationType } from "@/src/lib/firebase";
-import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, where, getDocs } from "firebase/firestore";
+import { onAuthStateChanged } from "firebase/auth";
+import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, where, getDocs, getDoc, doc } from "firebase/firestore";
 
 export function WelcomeSection() {
+  const [counts, setCounts] = useState({ genes: 0, contributors: 0 });
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const unsubGenes = onSnapshot(collection(db, "genes"), (snap) => {
+      setCounts(prev => ({ ...prev, genes: snap.size }));
+    });
+    const unsubUsers = onSnapshot(collection(db, "users"), (snap) => {
+      setCounts(prev => ({ ...prev, contributors: snap.size }));
+    });
+    return () => { unsubGenes(); unsubUsers(); };
+  }, []);
+
   return (
     <div className="bg-[#fdfdfd] border border-[#cccccc] p-6 rounded-sm shadow-sm mb-8">
       <div className="flex flex-col md:flex-row gap-8 items-center">
@@ -20,7 +35,12 @@ export function WelcomeSection() {
             Inspired by the principles of open access and collaborative archiving, we believe that the blueprint of life should not be hidden behind paywalls or complex jargon.
           </p>
           <div className="flex flex-wrap gap-3">
-            <Button className="bg-[#990000] hover:bg-[#770000] text-white">Explore the Database</Button>
+            <Button 
+              onClick={() => navigate("/genes")}
+              className="bg-[#990000] hover:bg-[#770000] text-white"
+            >
+              Explore the Database
+            </Button>
             <Button variant="outline" className="border-[#990000] text-[#990000] hover:bg-[#990000]/5">Learn About AOG</Button>
           </div>
         </div>
@@ -30,8 +50,8 @@ export function WelcomeSection() {
             Quick Stats
           </h3>
           <ul className="text-sm space-y-2">
-            <li className="flex justify-between"><span>Genes Archived:</span> <span className="font-mono font-bold">0</span></li>
-            <li className="flex justify-between"><span>Contributors:</span> <span className="font-mono font-bold">0</span></li>
+            <li className="flex justify-between"><span>Genes Archived:</span> <span className="font-mono font-bold">{counts.genes}</span></li>
+            <li className="flex justify-between"><span>Contributors:</span> <span className="font-mono font-bold">{counts.contributors}</span></li>
             <li className="flex justify-between"><span>Open Source:</span> <span className="font-mono font-bold">Yes</span></li>
           </ul>
         </div>
@@ -43,25 +63,39 @@ export function WelcomeSection() {
 export function NewsSection() {
   const [news, setNews] = useState<any[]>([]);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [user, setUser] = useState(auth.currentUser);
 
   useEffect(() => {
+    const unsubscribeAuth = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+    });
+
     const q = query(collection(db, "news"), orderBy("date", "desc"));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    const unsubscribeNews = onSnapshot(q, (snapshot) => {
       setNews(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     }, (error) => handleFirestoreError(error, OperationType.LIST, "news"));
 
-    // Check admin status
-    if (auth.currentUser) {
-      getDocs(query(collection(db, "users"), where("uid", "==", auth.currentUser.uid)))
-        .then(snap => {
-          if (!snap.empty && snap.docs[0].data().role === 'admin') {
-            setIsAdmin(true);
-          }
-        });
-    }
-
-    return () => unsubscribe();
+    return () => {
+      unsubscribeAuth();
+      unsubscribeNews();
+    };
   }, []);
+
+  useEffect(() => {
+    const checkAdmin = async () => {
+      if (user) {
+        const userDoc = await getDoc(doc(db, "users", user.uid));
+        if (userDoc.exists() && userDoc.data().role === 'admin') {
+          setIsAdmin(true);
+        } else {
+          setIsAdmin(false);
+        }
+      } else {
+        setIsAdmin(false);
+      }
+    };
+    checkAdmin();
+  }, [user]);
 
   const postNews = async () => {
     const title = prompt("Enter news title:");
@@ -117,13 +151,20 @@ export function NewsSection() {
 export function GeneSearch() {
   const [queryStr, setQueryStr] = useState("");
   const [results, setResults] = useState<Gene[]>([]);
+  const [user, setUser] = useState(auth.currentUser);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+    });
+    return () => unsubscribe();
+  }, []);
 
   const handleSearch = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
     setQueryStr(val);
     if (val.trim().length > 1) {
-      // In a real app, we'd use Algolia or a more complex Firestore query
-      // For now, we'll fetch all and filter client-side (since it's empty/small)
       const q = query(collection(db, "genes"));
       const snap = await getDocs(q);
       const allGenes = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Gene));
@@ -140,14 +181,16 @@ export function GeneSearch() {
 
   return (
     <div className="space-y-6">
-      <div className="relative">
-        <Input 
-          value={queryStr}
-          onChange={handleSearch}
-          placeholder="Search for a gene (e.g., BRCA1, TP53)..." 
-          className="h-12 text-lg pl-12 border-[#cccccc] focus-visible:ring-[#990000]"
-        />
-        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-6 h-6 text-gray-400" />
+      <div className="flex gap-2">
+        <div className="relative flex-grow">
+          <Input 
+            value={queryStr}
+            onChange={handleSearch}
+            placeholder="Search for a gene (e.g., BRCA1, TP53)..." 
+            className="h-12 text-lg pl-12 border-[#cccccc] focus-visible:ring-[#990000]"
+          />
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-6 h-6 text-gray-400" />
+        </div>
       </div>
 
       <AnimatePresence>
@@ -160,14 +203,20 @@ export function GeneSearch() {
           >
             <h4 className="text-sm font-bold text-gray-500 uppercase tracking-widest">Search Results ({results.length})</h4>
             {results.map((gene) => (
-              <Card key={gene.id} className="border-[#cccccc] hover:border-[#990000] transition-colors cursor-pointer group">
+              <Card 
+                key={gene.id} 
+                onClick={() => navigate(`/gene/${gene.id}`)}
+                className="border-[#cccccc] hover:border-[#990000] transition-colors cursor-pointer group"
+              >
                 <CardHeader className="p-4 pb-2">
                   <div className="flex justify-between items-start">
                     <div>
                       <CardTitle className="text-[#990000] group-hover:underline">{gene.symbol}</CardTitle>
                       <CardDescription className="font-medium text-gray-700">{gene.name}</CardDescription>
                     </div>
-                    <Badge variant="outline" className="font-mono text-[10px]">{gene.location}</Badge>
+                    {gene.location && gene.location !== "Unknown" && (
+                      <Badge variant="outline" className="font-mono text-[10px]">{gene.location}</Badge>
+                    )}
                   </div>
                 </CardHeader>
                 <CardContent className="p-4 pt-0">
@@ -191,11 +240,11 @@ export function GeneSearch() {
 
 export function FeaturedGenes() {
   const [featured, setFeatured] = useState<Gene[]>([]);
+  const navigate = useNavigate();
 
   useEffect(() => {
-    const q = query(collection(db, "genes"), orderBy("lastUpdated", "desc"), where("symbol", "!=", ""));
-    // Note: This query might need an index, but for now we'll just fetch all if it fails or use a simpler one
-    const unsubscribe = onSnapshot(collection(db, "genes"), (snapshot) => {
+    const q = query(collection(db, "genes"), orderBy("created_at", "desc"));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
       setFeatured(snapshot.docs.slice(0, 3).map(doc => ({ id: doc.id, ...doc.data() } as Gene)));
     });
     return () => unsubscribe();
@@ -214,9 +263,13 @@ export function FeaturedGenes() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {featured.map((gene) => (
-            <Card key={gene.id} className="border-[#cccccc] bg-[#f9f9f9]">
+            <Card 
+              key={gene.id} 
+              onClick={() => navigate(`/gene/${gene.id}`)}
+              className="border-[#cccccc] bg-[#f9f9f9] hover:border-[#990000] transition-colors cursor-pointer group"
+            >
               <CardHeader className="p-4">
-                <CardTitle className="text-lg text-[#990000]">{gene.symbol}</CardTitle>
+                <CardTitle className="text-lg text-[#990000] group-hover:underline">{gene.symbol}</CardTitle>
                 <CardDescription className="text-xs line-clamp-1">{gene.name}</CardDescription>
               </CardHeader>
               <CardContent className="p-4 pt-0">
